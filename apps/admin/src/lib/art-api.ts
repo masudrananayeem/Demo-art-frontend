@@ -7,7 +7,7 @@ const GET_CACHE_TTL: Record<string, number> = {
   "/api/admin/products": 15_000,
   "/api/admin/categories": 30_000,
   "/api/admin/subcategories": 30_000,
-  "/api/admin/orders": 5_000,
+  "/api/admin/orders": 15_000,
   "/api/admin/messages/threads": 5_000,
   "/api/site-content": 30_000,
   "/api/admin/payment-settings": 30_000,

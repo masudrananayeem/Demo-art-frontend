@@ -1,6 +1,6 @@
 "use client"
 import * as React from "react"
-import {LayoutDashboard,Package,Tags,UsersRound,ShoppingCart,MessageSquare,Home,Store,ExternalLink,ShieldCheck,UserCog,WalletCards,ClipboardList,ScrollText,Settings2} from "lucide-react"
+import {LayoutDashboard,Package,Tags,UsersRound,ShoppingCart,MessageSquare,Home,Store,ExternalLink,ShieldCheck,UserCog,WalletCards,ClipboardList,ScrollText,Settings2,BarChart3} from "lucide-react"
 import Link from "next/link"
 import {usePathname} from "next/navigation"
 import {Sidebar,SidebarContent,SidebarHeader,SidebarMenu,SidebarMenuButton,SidebarMenuItem,useSidebar,SidebarGroup,SidebarGroupLabel} from "@/components/ui/sidebar"
@@ -25,6 +25,7 @@ const administration=[
 ]
 const finance=[
  {title:"Payments & Finance",url:"/admin/payments",icon:WalletCards,permission:"managePayments"},
+ {title:"Business Analytics",url:"/admin/analytics",icon:BarChart3,permission:"managePayments"},
  {title:"Circulation",url:"/admin/circulation",icon:ClipboardList,permission:"manageCirculation"},
  {title:"Membership",url:"/admin/membership",icon:UsersRound,permission:"manageMembership"},
  {title:"Contact & Feedback",url:"/admin/contact",icon:MessageSquare,permission:"manageContact"},
