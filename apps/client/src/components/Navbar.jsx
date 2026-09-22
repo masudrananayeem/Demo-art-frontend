@@ -207,7 +207,7 @@ export default function Navbar({ onMenu }) {
             <nav className="nav-secondary" aria-label="Secondary navigation">
               <NavLink to="/gallery" className={navClass}>Gallery</NavLink>
               <NavLink to="/about" className={navClass}>About</NavLink>
-            <NavLink to="/membership" className={navClass}>Membership</NavLink>
+           
             <NavLink to="/contact" className={navClass}>Contact</NavLink>
             </nav>
             <div className="nav-actions">
