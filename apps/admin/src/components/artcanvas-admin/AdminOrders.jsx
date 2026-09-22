@@ -19,19 +19,12 @@ export default function AdminOrders() {
   const [deleting, setDeleting] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [filter, setFilter] = useState("all");
-  const [serverCounts, setServerCounts] = useState({});
-  const [nextCursor, setNextCursor] = useState(null);
-  const [cursor, setCursor] = useState("");
-  const [history, setHistory] = useState([]);
-  const PAGE_SIZE = 25;
 
   const load = async () => {
     setError("");
     try {
-      const data = await api.ordersPage(PAGE_SIZE, filter, cursor);
-      setOrders(Array.isArray(data?.items) ? data.items : []);
-      setServerCounts(Object.fromEntries((data?.statusCounts || []).map((x) => [x.status, Number(x.count || 0)])));
-      setNextCursor(data?.nextCursor || null);
+      const data = await api.allOrders();
+      setOrders(Array.isArray(data) ? data : []);
     } catch (e) {
       setOrders([]);
       setError(e.message || "Could not load orders.");
@@ -42,24 +35,32 @@ export default function AdminOrders() {
     let alive = true;
     (async () => {
       try {
-        const data = await api.ordersPage(PAGE_SIZE, filter, cursor);
-        if (!alive) return;
-        setOrders(Array.isArray(data?.items) ? data.items : []);
-        setServerCounts(Object.fromEntries((data?.statusCounts || []).map((x) => [x.status, Number(x.count || 0)])));
-        setNextCursor(data?.nextCursor || null);
+        const data = await api.allOrders();
+        if (alive) setOrders(Array.isArray(data) ? data : []);
       } catch (e) {
-        if (alive) { setOrders([]); setError(e.message || "Could not load orders."); }
+        if (alive) {
+          setOrders([]);
+          setError(e.message || "Could not load orders.");
+        }
       }
     })();
     return () => { alive = false; };
-  }, [filter, cursor]);
+  }, []);
 
   const counts = useMemo(() => {
-    const base = Object.fromEntries(STATUSES.map((s) => [s, Number(serverCounts[s] || 0)]));
+    const base = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    for (const order of orders || []) {
+      const status = STATUSES.includes(order.status) ? order.status : "placed";
+      base[status] += 1;
+    }
     return base;
-  }, [serverCounts]);
+  }, [orders]);
 
-  const visibleOrders = orders || [];
+  const visibleOrders = useMemo(() => {
+    const list = orders || [];
+    if (filter === "all") return list;
+    return list.filter((o) => (STATUSES.includes(o.status) ? o.status : "placed") === filter);
+  }, [orders, filter]);
 
   const updateStatus = async (order, status) => {
     if (status === order.status) return;
@@ -106,7 +107,7 @@ export default function AdminOrders() {
           <h3 className="font-display italic text-lg font-bold">Order control</h3>
           <p className="text-xs opacity-50">Track every order by delivery stage.</p>
         </div>
-        <button type="button" onClick={() => { setCursor(""); setHistory([]); load(); }} className="px-3 py-1.5 rounded-full border border-current/15 text-[10px] font-semibold uppercase">Refresh</button>
+        <button type="button" onClick={load} className="px-3 py-1.5 rounded-full border border-current/15 text-[10px] font-semibold uppercase">Refresh</button>
       </div>
 
       {error && <p className="text-xs text-[#A8431E] border border-[#A8431E]/20 rounded-lg px-3 py-2">{error}</p>}
@@ -117,7 +118,7 @@ export default function AdminOrders() {
           const MetaIcon = STATUS_META[status].icon;
           const active = filter === status;
           return (
-            <button key={status} type="button" onClick={() => { setFilter(active ? "all" : status); setCursor(""); setHistory([]); }} className={`text-left rounded-xl border p-3 transition ${active ? "border-current/50 bg-current/5" : "border-current/10"}`}>
+            <button key={status} type="button" onClick={() => setFilter(active ? "all" : status)} className={`text-left rounded-xl border p-3 transition ${active ? "border-current/50 bg-current/5" : "border-current/10"}`}>
               <div className="flex items-center justify-between gap-2"><MetaIcon size={14} className="opacity-60" /><span className="text-xl font-semibold leading-none">{counts[status]}</span></div>
               <p className="text-[9px] uppercase tracking-wider opacity-50 mt-2">{STATUS_META[status].label}</p>
             </button>
@@ -132,7 +133,7 @@ export default function AdminOrders() {
             <p className="text-xs opacity-60 mt-1">{visibleOrders.length} of {orders.length} orders shown</p>
             <div className="flex flex-wrap gap-1.5 mt-3">{STATUSES.map((s) => <span key={s} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-[9px] font-medium ${STATUS_META[s].badge}`}><span className={`size-1.5 rounded-full ${STATUS_META[s].dot}`} />{STATUS_META[s].label}</span>)}</div>
           </div>
-          <select value={filter} onChange={(e) => { setFilter(e.target.value); setCursor(""); setHistory([]); }} className="px-3 py-2 rounded-lg border border-current/15 bg-transparent text-xs capitalize">
+          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="px-3 py-2 rounded-lg border border-current/15 bg-transparent text-xs capitalize">
             <option value="all">All orders</option>
             {STATUSES.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
           </select>
@@ -177,7 +178,6 @@ export default function AdminOrders() {
             </tbody>
           </table>
           {visibleOrders.length === 0 && <p className="px-4 py-8 text-xs opacity-50">No orders in this stage.</p>}
-          {(history.length > 0 || nextCursor) && <div className="px-4 py-3 border-t border-current/10 flex items-center justify-between gap-3 text-xs"><button type="button" disabled={!history.length} onClick={() => { const previous = history[history.length - 1] || ""; setHistory((h) => h.slice(0, -1)); setCursor(previous); }} className="px-3 py-1.5 rounded-full border border-current/15 disabled:opacity-30">Previous</button><span className="opacity-50">Showing up to {PAGE_SIZE} orders</span><button type="button" disabled={!nextCursor} onClick={() => { setHistory((h) => [...h, cursor]); setCursor(nextCursor || ""); }} className="px-3 py-1.5 rounded-full border border-current/15 disabled:opacity-30">Next</button></div>}
         </div>
       </div>
     </div>
