@@ -12,7 +12,7 @@ export function ArtAdminProvider({children}:{children:React.ReactNode}){
  const refreshSubcategories=useCallback(async()=>{try{const d=await artApi.subcategories();const flat:any={};for(const g of Object.keys(d||{}))flat[g]=(d[g]||[]).map((x:any)=>x.name);setSubcategories(flat)}catch{}},[])
  const refreshSiteContent=useCallback(async()=>{try{setSiteContent(await artApi.siteContent())}catch{}},[])
  useEffect(()=>{const auth=getAuth(firebaseApp);return onAuthStateChanged(auth,async u=>{if(!u){setAdmin(null);setLoading(false);return} try{const me=await artApi.me();setAdmin(me?.admin?{uid:u.uid,...(me||{}),email:u.email,name:me.name||u.displayName||u.email}:null)}catch{setAdmin(null)}finally{setLoading(false)}})},[])
- useEffect(()=>{if(admin){refreshProducts();refreshCategories();refreshSubcategories();refreshSiteContent()}},[admin,refreshProducts,refreshCategories,refreshSubcategories,refreshSiteContent])
+ useEffect(()=>{if(admin){refreshCategories();refreshSubcategories();refreshSiteContent()}},[admin,refreshCategories,refreshSubcategories,refreshSiteContent])
  const value=useMemo(()=>({admin,isLoading,isAuthenticated:!!admin,products,categories,subcategories,siteContent,refreshCategories,refreshSubcategories,refreshSiteContent,refreshProducts}),[admin,isLoading,products,categories,subcategories,siteContent,refreshProducts,refreshCategories,refreshSubcategories,refreshSiteContent])
  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
