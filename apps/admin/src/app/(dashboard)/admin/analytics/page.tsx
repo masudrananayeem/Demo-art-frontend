@@ -111,27 +111,25 @@ export default function AnalyticsPage() {
     let alive = true
     setLoading(true)
     setError("")
-    artApi.analytics(year)
-      .then((data) => {
-        if (!alive) return
-        const monthRows = Array.isArray(data?.months) ? data.months : []
-        setOrders(monthRows.map((item:any, index:number) => ({ id:`analytics-${year}-${index}`, createdAt:`${year}-${String(index+1).padStart(2,"0")}-01`, status:"delivered", total:Number(item.income||0), __analytics:true, sales:Number(item.sales||0), orderCount:Number(item.orders||0), deliveredOrders:Number(item.deliveredOrders||0) })))
-        ;(window as any).__artcanvasAnalytics = data || {}
-      })
+    artApi.orders()
+      .then((data) => { if (alive) setOrders(Array.isArray(data) ? data : []) })
       .catch((e) => { if (alive) setError(e?.message || "Could not load order analytics.") })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [year])
+  }, [])
 
   const availableYears = useMemo(() => {
-    const nowYear = Number(currentYear())
-    const years = new Set<string>(Array.from({length: 6}, (_, i) => String(nowYear - i)))
+    const years = new Set<string>([currentYear()])
+    orders.forEach((order) => {
+      const date = safeDate(order?.createdAt)
+      if (date) years.add(String(date.getFullYear()))
+    })
     expenses.forEach((item) => {
       const date = safeDate(item?.date)
       if (date) years.add(String(date.getFullYear()))
     })
     return Array.from(years).sort((a, b) => Number(b) - Number(a))
-  }, [expenses])
+  }, [orders, expenses])
 
   const yearOrders = useMemo(() => orders.filter((order) => {
     const date = safeDate(order?.createdAt)
@@ -160,24 +158,27 @@ export default function AnalyticsPage() {
       .filter((order) => order?.status !== "cancelled")
       .reduce((sum, order) => sum + Number(order?.total || 0), 0)
     const expense = monthExpenses.reduce((sum, item) => sum + Number(item?.amount || 0), 0)
-    return { month: label, income, sales, expense, profit: income - expense, orders: monthOrders.reduce((sum, order) => sum + Number(order?.orderCount || 0), 0), deliveredOrders: monthOrders.reduce((sum, order) => sum + Number(order?.deliveredOrders || 0), 0) }
+    return { month: label, income, sales, expense, profit: income - expense, orders: monthOrders.length }
   }), [year, yearOrders, yearExpenses])
 
   const metrics = useMemo(() => {
     const income = monthly.reduce((sum, item) => sum + item.income, 0)
     const sales = monthly.reduce((sum, item) => sum + item.sales, 0)
     const expense = monthly.reduce((sum, item) => sum + item.expense, 0)
-    const delivered = monthly.reduce((sum, item) => sum + Number(item.deliveredOrders || 0), 0)
-    const cancelled = 0
+    const delivered = yearOrders.filter((o) => o?.status === "delivered").length
+    const cancelled = yearOrders.filter((o) => o?.status === "cancelled").length
     const averageOrder = delivered ? income / delivered : 0
     return { income, sales, expense, profit: income - expense, delivered, cancelled, averageOrder }
   }, [monthly, yearOrders])
 
   const statusData = useMemo(() => {
-    const server = (typeof window !== "undefined" ? (window as any).__artcanvasAnalytics?.statusCounts : []) || []
-    const map = Object.fromEntries(server.map((item:any) => [item.key, Number(item.count || 0)]))
-    return Object.entries(STATUS_LABELS).map(([key, label]) => ({ status: label, orders: map[key] || 0 }))
-  }, [orders])
+    const counts: Record<string, number> = {}
+    yearOrders.forEach((order) => {
+      const status = order?.status || "placed"
+      counts[status] = (counts[status] || 0) + 1
+    })
+    return Object.entries(STATUS_LABELS).map(([key, label]) => ({ status: label, orders: counts[key] || 0 }))
+  }, [yearOrders])
 
   const expenseCategoryData = useMemo(() => {
     const grouped: Record<string, number> = {}
@@ -189,9 +190,13 @@ export default function AnalyticsPage() {
   }, [yearExpenses])
 
   const paymentData = useMemo(() => {
-    const server = (typeof window !== "undefined" ? (window as any).__artcanvasAnalytics?.paymentData : []) || []
-    return Array.isArray(server) ? server : []
-  }, [orders])
+    const grouped: Record<string, number> = {}
+    yearOrders.filter((order) => order?.status === "delivered").forEach((order) => {
+      const method = order?.paymentMethod === "cod" ? "Cash on delivery" : (order?.paymentMethod || "Unknown")
+      grouped[method] = (grouped[method] || 0) + Number(order?.total || 0)
+    })
+    return Object.entries(grouped).map(([method, revenue]) => ({ method, revenue }))
+  }, [yearOrders])
 
   const addExpense = () => {
     const amount = Number(expenseForm.amount)

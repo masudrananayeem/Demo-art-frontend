@@ -86,34 +86,51 @@ export function useAdminSectionNotifications(adminUid?: string, enabled = true) 
     const check = async () => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return
       try {
-        const state = await artApi.notificationState()
+        const [products, categories, subcategories, orders, threads, siteContent, payments] = await Promise.all([
+          artApi.products(),
+          artApi.categories(),
+          artApi.subcategories(),
+          artApi.orders(),
+          artApi.threads(),
+          artApi.siteContent(),
+          artApi.paymentSettings(),
+        ])
         if (!alive) return
         failures = 0
+
         const current: Record<AdminNotificationKey, string> = {
-          products: String(state?.products || ""),
-          categories: String(state?.categories || ""),
-          subcategories: String(state?.subcategories || ""),
-          orders: String(state?.orders || ""),
-          messages: String(state?.messages || ""),
-          homepage: String(state?.homepage || ""),
-          payments: String(state?.payments || ""),
+          products: collectionSignature(products || [], ["id", "updatedAt", "createdAt", "name", "price", "offerPrice", "offerEnabled"]),
+          categories: collectionSignature(categories || [], ["id", "name", "updatedAt", "hidden"]),
+          subcategories: stableSignature(subcategories || {}),
+          orders: collectionSignature(orders || [], ["id", "status", "updatedAt", "createdAt", "total"]),
+          messages: collectionSignature(threads || [], ["uid", "updatedAt", "createdAt", "lastMessageAt", "unreadCount"]),
+          homepage: stableSignature(siteContent || {}),
+          payments: stableSignature(payments || {}),
         }
+
         const previous = loadState()
         const next = { ...previous }
         const nextUnread: Record<AdminNotificationKey, boolean> = { ...unread }
+
         ;(Object.keys(current) as AdminNotificationKey[]).forEach((key) => {
           const entry = previous[key]
           if (!entry?.signature) {
+            // First visit establishes the baseline; existing data is not shown as new.
             next[key] = { signature: current[key], seenSignature: current[key] }
             nextUnread[key] = false
-          } else {
+          } else if (entry.signature !== current[key]) {
             next[key] = { signature: current[key], seenSignature: entry.seenSignature || entry.signature }
+            nextUnread[key] = entry.seenSignature !== current[key]
+          } else {
+            next[key] = entry
             nextUnread[key] = entry.seenSignature !== current[key]
           }
         })
+
         saveState(next)
         setUnread(nextUnread)
       } catch {
+        // Notifications are intentionally non-blocking. Back off aggressively on quota/network errors.
         failures += 1
         if (timer) { clearInterval(timer); timer = setInterval(check, failures >= 2 ? ERROR_BACKOFF_MS : POLL_MS) }
       }

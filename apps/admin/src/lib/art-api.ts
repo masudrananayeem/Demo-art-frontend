@@ -10,9 +10,7 @@ const GET_CACHE_TTL: Record<string, number> = {
   "/api/admin/orders": 15_000,
   "/api/admin/messages/threads": 5_000,
   "/api/site-content": 30_000,
-  "/api/admin/payment-settings": 300_000,
-  "/api/admin/notification-state": 15_000,
-  "/api/admin/analytics": 300_000,
+  "/api/admin/payment-settings": 30_000,
 };
 
 const GET_CACHE = new Map<string, { value: any; expiresAt: number }>();
@@ -90,7 +88,6 @@ export const artApi = {
   updateSubcategory:(gender:string,oldName:string,name:string)=>request('/api/admin/subcategories',{method:'PATCH',body:{gender,oldName,name},auth:true}),
   deleteSubcategory:(gender:string,name:string)=>request('/api/admin/subcategories',{method:'DELETE',body:{gender,name},auth:true}),
   orders:()=>request('/api/admin/orders',{auth:true}),
-  ordersPage:(limit=25,status='all',cursor='')=>request(`/api/admin/orders/page?limit=${limit}&status=${encodeURIComponent(status)}${cursor?`&cursor=${encodeURIComponent(cursor)}`:''}`,{auth:true}),
   updateOrderStatus:(id:string,status:string,reason:string='')=>request(`/api/admin/orders/${id}`,{method:'PATCH',body:{status,...(reason ? {reason} : {})},auth:true}),
   updatePaymentStatus:(id:string,status:string,body:any={})=>request(`/api/admin/orders/${id}/payment`,{method:'PATCH',body:{paymentStatus:status,...body},auth:true}),
   deletePaymentRecord:(id:string)=>request(`/api/admin/orders/${id}/payment`,{method:'DELETE',auth:true}),
@@ -114,8 +111,6 @@ export const artApi = {
   rejectAccessRequest:(id:string,body:any)=>request(`/api/admin/access-requests/${id}`,{method:'PATCH',body:{...body,status:'rejected'},auth:true}),
   auditLogs:(limit=200)=>request(`/api/admin/audit?limit=${limit}`,{auth:true}),
   paymentSettings:()=>request('/api/admin/payment-settings',{auth:true}),
-  notificationState:()=>request('/api/admin/notification-state',{auth:true}),
-  analytics:(year:string)=>request(`/api/admin/analytics?year=${encodeURIComponent(year)}`,{auth:true}),
   updatePaymentSettings:(body:any)=>request('/api/admin/payment-settings',{method:'PATCH',body,auth:true}),
   circulation:()=>request('/api/admin/circulation',{auth:true}),
   createCirculation:(body:any)=>request('/api/admin/circulation',{method:'POST',body,auth:true}),
