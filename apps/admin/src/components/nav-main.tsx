@@ -1,0 +1,115 @@
+"use client"
+
+import { ChevronRight, type LucideIcon } from "lucide-react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import {
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarMenuBadge,
+  useSidebar,
+} from "@/components/ui/sidebar"
+
+export function NavMain({
+  label,
+  items,
+}: {
+  label: string
+  items: {
+    title: string
+    url: string
+    icon?: LucideIcon
+    isActive?: boolean
+    badge?: number
+    items?: {
+      title: string
+      url: string
+      isActive?: boolean
+    }[]
+  }[]
+}) {
+  const pathname = usePathname()
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  const closeMobileSidebar = () => {
+    if (isMobile) setOpenMobile(false)
+  }
+
+  // Check if any subitem is active to determine if parent should be open
+  const shouldBeOpen = (item: typeof items[0]) => {
+    if (item.isActive) return true
+    return item.items?.some(subItem => pathname === subItem.url) || false
+  }
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarMenu>
+        {items.map((item) => (
+          <Collapsible
+            key={item.title}
+            asChild
+            defaultOpen={shouldBeOpen(item)}
+            className="group/collapsible"
+          >
+            <SidebarMenuItem>
+              {item.items?.length ? (
+                <>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton tooltip={item.title} className="cursor-pointer">
+                      {item.icon && <item.icon />}
+                      <span>{item.title}</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {item.items?.map((subItem) => (
+                        <SidebarMenuSubItem key={subItem.title}>
+                          <SidebarMenuSubButton asChild className="cursor-pointer" isActive={pathname === subItem.url}>
+                            <Link
+                              href={subItem.url}
+                              onClick={closeMobileSidebar}
+                              target={(item.title === "Auth Pages" || item.title === "Errors") ? "_blank" : undefined}
+                              rel={(item.title === "Auth Pages" || item.title === "Errors") ? "noopener noreferrer" : undefined}
+                            >
+                              <span>{subItem.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </>
+              ) : (
+                <SidebarMenuButton asChild tooltip={item.title} className="cursor-pointer" isActive={pathname === item.url}>
+                  <Link href={item.url} onClick={closeMobileSidebar}>
+                    {item.icon && <item.icon />}
+                    <span>{item.title}</span>
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <SidebarMenuBadge className="ml-auto bg-primary/90 text-primary-foreground h-4 min-w-4 rounded-full text-[10px] font-medium px-1">
+                        {item.badge > 9 ? '9+' : item.badge}
+                      </SidebarMenuBadge>
+                    )}
+                  </Link>
+                </SidebarMenuButton>
+              )}
+            </SidebarMenuItem>
+          </Collapsible>
+        ))}
+      </SidebarMenu>
+    </SidebarGroup>
+  )
+}

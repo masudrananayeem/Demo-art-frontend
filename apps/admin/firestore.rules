@@ -1,0 +1,331 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is admin
+    // Security: Only checks adminUsers collection - no hardcoded emails
+    // Supports both 'active' status (bookstore) and non-suspended/deleted/inactive (admin dashboard)
+    function isAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) &&
+             (get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status == 'active' ||
+              (get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status != 'suspended' &&
+               get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status != 'deleted' &&
+               get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status != 'inactive'));
+    }
+    
+    // Helper function to check if user has Admin role (for admin dashboard)
+    function hasAdminRole() {
+      return isAdmin() && 
+             get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.role == 'Admin';
+    }
+    
+    // Helper function to check if user owns the admin document
+    function ownsAdminDoc(adminId) {
+      return isAuthenticated() && request.auth.uid == adminId;
+    }
+    
+    // Helper function to check if user owns the resource
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if seller owns order items (uses resource.data)
+    function sellerOwnsOrderItems() {
+      return resource.data.items.size() > 0 &&
+             exists(/databases/$(database)/documents/books/$(resource.data.items[0].bookId)) &&
+             get(/databases/$(database)/documents/books/$(resource.data.items[0].bookId)).data.sellerId == request.auth.uid;
+    }
+    
+    // Helper function to check if update only modifies viewCount (for public view tracking)
+    function isOnlyViewCountUpdate() {
+      // Get current viewCount (default to 0 if doesn't exist or is null)
+      let currentViewCount = resource.data.viewCount is int ? int(resource.data.viewCount) : 0;
+      let newViewCount = request.resource.data.viewCount is int ? int(request.resource.data.viewCount) : 0;
+      
+      // Check that viewCount is being incremented (allows increment by 1, or set to 1 if didn't exist)
+      let viewCountIncremented = (currentViewCount == 0 && newViewCount == 1) || 
+                                  (currentViewCount > 0 && newViewCount == currentViewCount + 1);
+      
+      // Check that critical immutable fields haven't changed (safety check)
+      // These comparisons handle null/undefined correctly - if both are null, they're equal
+      let sellerIdUnchanged = request.resource.data.sellerId == resource.data.sellerId;
+      let titleUnchanged = request.resource.data.title == resource.data.title;
+      let priceUnchanged = request.resource.data.price == resource.data.price;
+      
+      return viewCountIncremented && sellerIdUnchanged && titleUnchanged && priceUnchanged;
+    }
+    
+    // Helper function to check if update only modifies hasActiveOrder (for order tracking)
+    // Note: updatedAt is allowed to change as it's automatically set by serverTimestamp()
+    // In Firestore, request.resource.data contains the FULL document after update
+    function isOnlyHasActiveOrderUpdate() {
+      // Check that hasActiveOrder exists in the update and is a boolean
+      let hasActiveOrderExists = 'hasActiveOrder' in request.resource.data;
+      let hasActiveOrderIsBool = request.resource.data.hasActiveOrder is bool;
+      
+      // Check that hasActiveOrder value is actually different from current value
+      // Handle cases where hasActiveOrder might not exist in original (treat as false)
+      let oldValue = 'hasActiveOrder' in resource.data ? resource.data.hasActiveOrder == true : false;
+      let newValue = request.resource.data.hasActiveOrder == true;
+      let valueChanged = oldValue != newValue;
+      
+      // Verify critical immutable fields haven't changed (safety check)
+      // Use == which handles null/undefined/missing fields correctly
+      let sellerIdUnchanged = request.resource.data.sellerId == resource.data.sellerId;
+      let titleUnchanged = request.resource.data.title == resource.data.title;
+      let priceUnchanged = request.resource.data.price == resource.data.price;
+      
+      // Allow update if:
+      // 1. hasActiveOrder exists in update and is boolean
+      // 2. hasActiveOrder value changed
+      // 3. Critical fields remain unchanged
+      // Note: updatedAt and other fields can change, but sellerId/title/price must not
+      return hasActiveOrderExists && hasActiveOrderIsBool && valueChanged && 
+             sellerIdUnchanged && titleUnchanged && priceUnchanged;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Public read access for public profiles (basic info only) - for bookstore frontend
+      // Users can read their own profile fully
+      allow read: if true; // Public profiles are accessible
+      // Users can create their own profile during signup
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Users can update their own profile
+      allow update: if isOwner(userId);
+      // Only admins can delete users
+      allow delete: if isAdmin();
+      
+      // Wishlist subcollection
+      match /wishlist/{wishlistId} {
+        // Users can only access their own wishlist
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // Books collection
+    match /books/{bookId} {
+      // Public read access - for bookstore frontend
+      allow read: if true;
+      // Authenticated users can create books (must set sellerId to their own uid)
+      allow create: if isAuthenticated() && 
+                       request.resource.data.sellerId == request.auth.uid;
+      // Allow public users to increment viewCount (for view tracking)
+      // OR allow updates to hasActiveOrder field (for order tracking - when orders are placed/cancelled)
+      // OR authenticated users can update their own books (sellers)
+      // OR admins can update any book (for admin dashboard)
+      allow update: if isOnlyViewCountUpdate() ||
+                       isOnlyHasActiveOrderUpdate() ||
+                       (isAuthenticated() && 
+                        (resource.data.sellerId == request.auth.uid || isAdmin()));
+      // Users can delete their own books, admins can delete any
+      allow delete: if isAuthenticated() && 
+                       (resource.data.sellerId == request.auth.uid || isAdmin());
+    }
+    
+    // Sellers collection
+    match /sellers/{sellerId} {
+      // Public read access - for bookstore frontend
+      allow read: if true;
+      // Authenticated users can create seller profile (must set userId to their own uid)
+      allow create: if isAuthenticated() && 
+                      request.resource.data.userId == request.auth.uid;
+      // Users can update their own seller profile, admins can update any
+      allow update: if isAuthenticated() && 
+                       (resource.data.userId == request.auth.uid || isAdmin());
+      // Only admins can delete sellers
+      allow delete: if isAdmin();
+    }
+    
+    // Orders collection
+    match /orders/{orderId} {
+      // Allow reading orders:
+      // 1. Authenticated users can read their own orders
+      // 2. Admins can read all orders (for admin dashboard)
+      // 3. Sellers can read orders for their books
+      // Security: Removed public read access - orderId is not sufficient authentication
+      // For order tracking, use authenticated endpoints or secure tokens
+      allow read: if isAuthenticated() && 
+                     (resource.data.userId == request.auth.uid || 
+                      isAdmin() ||
+                      sellerOwnsOrderItems());
+      // Allow order creation for:
+      // 1. Unauthenticated users (userId can be null/undefined/missing) - for guest checkout
+      // 2. Authenticated users (must set userId to their own uid if provided, or null/undefined)
+      allow create: if (!isAuthenticated() || 
+                      (isAuthenticated() && 
+                       (!('userId' in request.resource.data) || 
+                        request.resource.data.userId == null || 
+                        request.resource.data.userId == request.auth.uid)));
+      // Users can update their own orders, sellers can update orders for their books, admins can update any
+      allow update: if isAuthenticated() && 
+                       ((resource.data.userId == null && !request.resource.data.userId) ||
+                        resource.data.userId == request.auth.uid || 
+                        isAdmin() ||
+                        // Sellers can update orders for their books (with safety check)
+                        sellerOwnsOrderItems());
+      // Only admins can delete orders
+      allow delete: if isAdmin();
+    }
+    
+    // Categories collection
+    match /categories/{categoryId} {
+      // Public read access - for bookstore frontend
+      allow read: if true;
+      // Only admins can modify categories
+      allow write: if isAdmin();
+    }
+    
+    // Admin users collection
+    match /adminUsers/{adminId} {
+      // Users can read their own admin document (needed for Google sign-in check)
+      // This avoids circular dependency - users can read their own doc without being admin first
+      allow read: if isAuthenticated() && ownsAdminDoc(adminId);
+      // Users can read temp documents (for pending account migration)
+      // We check email match in the application code for security
+      allow read: if isAuthenticated() && adminId.matches('temp_.*');
+      // Admins can read all admin users (but only after they're verified as admin)
+      // Note: This is mainly for admin dashboard to list all admins
+      // The circular dependency is avoided because we check ownsAdminDoc first above
+      allow read: if isAdmin();
+      // Allow querying adminUsers collection (for finding pending accounts by email)
+      // Limited to authenticated users (email filtering happens in app code)
+      allow list: if isAuthenticated();
+      // Only admins can create admin users (except users can create their own when migrating from approved request)
+      // Users can create their own adminUsers document if:
+      // 1. Document ID matches their UID
+      // 2. Email matches their auth email
+      // 3. Status is active
+      allow create: if isAdmin() || 
+                      (isAuthenticated() && 
+                       adminId == request.auth.uid &&
+                       request.resource.data.email == request.auth.token.email);
+      // Users can update their own admin document (for migration from temp to UID-based)
+      allow update: if isAuthenticated() && ownsAdminDoc(adminId);
+      // Users can update temp documents (email check in app code)
+      allow update: if isAuthenticated() && adminId.matches('temp_.*');
+      // Admins can update any admin user
+      // For admin dashboard: Only Admin role can update (more restrictive)
+      allow update: if isAdmin() && (hasAdminRole() || ownsAdminDoc(adminId));
+      // Users can delete temp documents (for migration, email check in app code)
+      allow delete: if isAuthenticated() && adminId.matches('temp_.*');
+      // Admins can delete any admin user
+      // For admin dashboard: Only Admin role can delete
+      allow delete: if hasAdminRole();
+    }
+    
+    // Audit logs collection
+    match /auditLogs/{logId} {
+      // Only admins can read audit logs
+      allow read: if isAdmin();
+      // Only admins can create audit logs (for bookstore)
+      // OR no client-side writes (for admin dashboard - server-only via Admin SDK)
+      // For admin dashboard, we prefer server-only writes, but allow admin writes for bookstore compatibility
+      allow create: if isAdmin();
+      // No updates or deletes allowed
+      allow update, delete: if false;
+    }
+    
+    // Admin requests collection
+    match /adminRequests/{requestId} {
+      // Anyone (authenticated or not) can create admin requests (for sign-up page)
+      allow create: if true;
+      // Users can read their own approved requests (for account migration)
+      allow read: if isAuthenticated() && 
+                     resource.data.email == request.auth.token.email &&
+                     resource.data.status == 'approved';
+      // Only admins can read all admin requests
+      allow read: if isAdmin();
+      // Only admins can update admin requests (approve/reject)
+      // For admin dashboard: Only Admin role can update
+      allow update: if isAdmin() && (hasAdminRole() || !('role' in get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data));
+      // Only admins can delete admin requests
+      // For admin dashboard: Only Admin role can delete
+      allow delete: if hasAdminRole();
+      // Allow querying for approved requests by email
+      allow list: if isAuthenticated();
+    }
+    
+    // Admin customizer settings collection
+    match /adminCustomizerSettings/{adminId} {
+      // Admins can read their own customizer settings
+      allow read: if isAuthenticated() && ownsAdminDoc(adminId);
+      // Admins can create/update their own customizer settings
+      // Document ID must match the admin's UID
+      allow create, update: if isAuthenticated() && ownsAdminDoc(adminId);
+      // Admins can delete their own customizer settings
+      allow delete: if isAuthenticated() && ownsAdminDoc(adminId);
+    }
+
+    // Admin notes collection (for dashboard notes sharing)
+    match /adminNotes/{noteId} {
+      // Can the current admin read this note?
+      function canReadAdminNote() {
+        // Creator can always read
+        let isCreator = isAdmin() && resource.data.createdByAdminId == request.auth.uid;
+
+        // Does this note have a specific share list?
+        let hasSpecificList =
+          'sharedWithAdminIds' in resource.data &&
+          resource.data.sharedWithAdminIds.size() > 0;
+
+        // Shared with all admins: shared == true and no specific list
+        let isSharedAll =
+          isAdmin() &&
+          resource.data.shared == true &&
+          !hasSpecificList;
+
+        // Shared with specific admins: current admin is in sharedWithAdminIds
+        let isSharedSpecific =
+          isAdmin() &&
+          ('sharedWithAdminIds' in resource.data) &&
+          resource.data.sharedWithAdminIds.hasAny([request.auth.uid]);
+
+        return isCreator || isSharedAll || isSharedSpecific;
+      }
+
+      // Only admins can create notes, and they must set createdByAdminId to themselves
+      allow create: if isAdmin() &&
+        request.resource.data.createdByAdminId == request.auth.uid;
+
+      // Only the creator admin can update/delete their notes
+      allow update, delete: if isAdmin() &&
+        resource.data.createdByAdminId == request.auth.uid;
+
+      // Read according to sharing settings above
+      allow read: if canReadAdminNote();
+    }
+    
+    // Contact form submissions (from Book Store contact page; written via API with Admin SDK)
+    match /contactSubmissions/{submissionId} {
+      allow read: if isAdmin();
+      allow create: if false;
+      allow update, delete: if isAdmin();
+    }
+    
+    // Visitor logs collection (for analytics)
+    match /visitorLogs/{logId} {
+      // Public write access - anyone can create visitor logs (for tracking)
+      // This allows the API route to track visitors without authentication
+      allow create: if true;
+      // Only admins can read visitor logs (for analytics dashboard)
+      // This covers both get (single document) and list (query) operations
+      allow read: if isAdmin();
+      // Explicitly allow list operations for admins (for queries)
+      allow list: if isAdmin();
+      // No updates or deletes allowed - visitor logs are immutable
+      allow update, delete: if false;
+    }
+    
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

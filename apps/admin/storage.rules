@@ -1,0 +1,28 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             firestore.exists(/databases/(default)/documents/adminUsers/$(request.auth.uid)) &&
+             firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data.status != 'suspended' &&
+             firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data.status != 'deleted' &&
+             firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data.status != 'inactive';
+    }
+    
+    // All paths - only authenticated admins can upload
+    match /{allPaths=**} {
+      // Anyone authenticated can read (for public images)
+      allow read: if isAuthenticated();
+      
+      // Only authenticated admins can upload/write
+      allow write: if isAdmin();
+    }
+  }
+}

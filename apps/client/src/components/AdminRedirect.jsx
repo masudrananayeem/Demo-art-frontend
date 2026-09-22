@@ -1,0 +1,2 @@
+import React,{useEffect} from 'react';
+export default function AdminRedirect(){const url=import.meta.env.VITE_ADMIN_URL||'http://localhost:3000/admin/dashboard';useEffect(()=>{window.location.replace(url)},[url]);return <main className="min-h-[60vh] grid place-items-center px-6 text-center"><div><p className="section-kicker">ARTCANVAS / STUDIO</p><h1 className="font-display italic text-3xl font-black">Opening Studio Admin…</h1><p className="text-sm opacity-60 mt-2">If it does not open automatically, start the admin app on port 3000.</p></div></main>}

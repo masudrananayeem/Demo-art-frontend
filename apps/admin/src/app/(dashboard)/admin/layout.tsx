@@ -1,0 +1,3 @@
+"use client"
+import {useEffect} from "react";import {useRouter,usePathname} from "next/navigation";import {useAdminAuth} from "@/contexts/admin-auth-context";import {LoadingSpinner} from "@/components/ui/loading-spinner"
+export default function AdminLayout({children}:{children:React.ReactNode}){const{isAuthenticated,admin,isLoading}=useAdminAuth();const router=useRouter();const path=usePathname();useEffect(()=>{if(!isLoading&&!isAuthenticated)router.replace('/admin/login')},[isLoading,isAuthenticated,router]);if(isLoading)return <div className="min-h-[70vh] grid place-items-center"><LoadingSpinner size="md" showContainer={false} text="Loading ArtCanvas admin…"/></div>;if(!isAuthenticated||!admin)return null;return children}

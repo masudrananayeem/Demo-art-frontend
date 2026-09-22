@@ -1,0 +1,21 @@
+{
+  "name": "artcanvas-frontend-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/client",
+    "apps/admin"
+  ],
+  "scripts": {
+    "dev:client": "npm --workspace apps/client run dev",
+    "dev:admin": "npm --workspace apps/admin run dev",
+    "build:client": "npm --workspace apps/client run build",
+    "build:admin": "npm --workspace apps/admin run build",
+    "dev": "npm run dev:client",
+    "build": "npm run build:client"
+  },
+  "overrides": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}

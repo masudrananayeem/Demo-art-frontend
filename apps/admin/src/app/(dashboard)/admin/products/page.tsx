@@ -1,0 +1,3 @@
+"use client"
+import AdminProducts from "@/components/artcanvas-admin/AdminProducts.jsx"
+export default function Page(){return <div className="px-4 lg:px-6"><div className="mb-5"><p className="text-xs uppercase tracking-[.18em] text-primary">ArtCanvas / Control</p><h1 className="text-2xl md:text-3xl font-semibold tracking-tight mt-1">Products</h1><p className="text-sm text-muted-foreground mt-1">Manage this area without changing the storefront.</p></div><div className="rounded-xl border bg-card p-4 md:p-6"><AdminProducts/></div></div>}
